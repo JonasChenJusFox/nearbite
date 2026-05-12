@@ -1,0 +1,229 @@
+"""
+frontend/components/restaurant_card.py
+Owner: Jonas Chen
+
+Responsibilities:
+- Renders individual restaurant cards
+- Displays image, cuisine, rating, address, and review snippet
+- Handles save / unsave actions with login gating
+- Writes saved restaurant state to MongoDB for logged-in users
+- Logs wrapped-related interaction events to MongoDB
+- Supports focus-map behavior and comments dialog display
+- Optionally links out to the restaurant source page
+"""
+
+from __future__ import annotations
+
+import html
+
+import streamlit as st
+
+from frontend.adapters import clean_text, get_current_origin, shorten_text
+from frontend.auth import open_login_modal
+from frontend.components.comments_modal import open_comments_modal
+from integration.interaction_repo import (
+    get_saved_restaurant_ids,
+    save_restaurant_for_user,
+    unsave_restaurant_for_user,
+)
+from integration.wrapped_repo import log_user_interaction
+
+
+def _get_price_for_card(restaurant: dict) -> str:
+    """
+    Resolve the best available price label for display on the card.
+    """
+    price_display = clean_text(restaurant.get("price_display", ""))
+    if price_display and price_display != "Price not listed":
+        return price_display
+
+    price = clean_text(restaurant.get("price", ""))
+    if price:
+        return price
+
+    price_original = clean_text(restaurant.get("price_original", ""))
+    if price_original:
+        return price_original
+
+    try:
+        price_level = int(restaurant.get("price_level", 0) or 0)
+    except (TypeError, ValueError):
+        price_level = 0
+
+    if price_level > 0:
+        return "$" * price_level
+
+    return ""
+
+
+def _build_meta_line(restaurant: dict) -> str:
+    """
+    Build the short metadata line shown under the restaurant title.
+    """
+    price_text = _get_price_for_card(restaurant)
+    borough = restaurant.get("borough", "Unknown")
+    travel_minutes = restaurant.get("travel_minutes", "—")
+
+    origin = get_current_origin()
+    origin_label = origin.get("label", "NYU")
+
+    meta_parts: list[str] = []
+
+    if price_text:
+        meta_parts.append(price_text)
+
+    if borough and borough != "Unknown":
+        meta_parts.append(str(borough))
+
+    if travel_minutes not in [None, "", 0, "—"]:
+        meta_parts.append(f"{travel_minutes} min from {origin_label}")
+
+    return " • ".join(meta_parts) if meta_parts else "Details not listed"
+
+
+def _log_if_logged_in(business_id: str, action: str) -> None:
+    """
+    Log an interaction only if the current user is logged in.
+    """
+    if not st.session_state.get("is_logged_in", False):
+        return
+
+    current_user = st.session_state.get("current_user")
+    username = current_user.get("username") if current_user else None
+    if not username:
+        return
+
+    log_user_interaction(username, business_id, action)
+
+
+def _handle_save_toggle(business_id: str, already_saved: bool, saved_ids: list[str]) -> None:
+    """
+    Save or unsave a restaurant.
+    If the user is not logged in, open the login modal instead.
+    """
+    if not st.session_state.get("is_logged_in", False):
+        open_login_modal()
+        st.rerun()
+
+    current_user = st.session_state.get("current_user")
+    username = current_user.get("username") if current_user else None
+
+    if not username:
+        open_login_modal()
+        st.rerun()
+
+    if already_saved:
+        unsave_restaurant_for_user(username, business_id)
+        _log_if_logged_in(business_id, "unsaved")
+        st.toast("Removed from saved restaurants.")
+    else:
+        save_restaurant_for_user(username, business_id)
+        _log_if_logged_in(business_id, "saved")
+        st.toast("Saved!")
+
+    st.session_state.saved_ids = get_saved_restaurant_ids(username)
+    st.rerun()
+
+
+def _handle_focus_map(business_id: str) -> None:
+    """
+    Move the selected restaurant into focus on the Discover page map.
+    """
+    _log_if_logged_in(business_id, "focus_map")
+
+    st.session_state.focus_business_id = business_id
+    st.session_state.jump_to_business_id = business_id
+    st.session_state.pending_discover_reset = True
+    st.session_state.page = "Discover"
+    st.rerun()
+
+
+def render_restaurant_card(restaurant: dict, key_prefix: str = "card") -> None:
+    """
+    Render a single restaurant card and its action buttons.
+    """
+    business_id = restaurant.get("business_id", "")
+    name = clean_text(restaurant.get("name", "Unknown"))
+    categories = " · ".join(restaurant.get("categories", [])[:3]) or "Restaurant"
+    rating = float(restaurant.get("rating", 0.0) or 0.0)
+    address = clean_text(restaurant.get("address", "Address not listed")) or "Address not listed"
+    review_text = shorten_text(restaurant.get("review_snippet", ""), 180)
+    meta = _build_meta_line(restaurant)
+
+    image_url = clean_text(restaurant.get("image_url", ""))
+    if image_url:
+        image_html = (
+            f"<img src='{html.escape(image_url, quote=True)}' "
+            f"alt='{html.escape(name, quote=True)}' class='nb-card-image'/>"
+        )
+    else:
+        image_html = """
+        <div class='nb-card-image nb-card-image-placeholder'>
+          <div class='nb-card-image-fallback'>Image unavailable</div>
+        </div>
+        """
+
+    st.markdown(
+        f"""
+        <div class="nb-card-wrap">
+          <div class="nb-card">
+            {image_html}
+            <div class="nb-card-body">
+              <div class="nb-card-head">
+                <div>
+                  <div class="nb-card-name">{html.escape(name)}</div>
+                  <div class="nb-card-cuisine">{html.escape(categories)}</div>
+                </div>
+                <div class="nb-rating-pill">⭐ {rating:.1f}</div>
+              </div>
+              <div class="nb-card-meta">{html.escape(meta)}</div>
+              <div class="nb-card-address">{html.escape(address)}</div>
+              <div class="nb-card-review">
+                {html.escape(review_text) if review_text else "No review snippet available."}
+              </div>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    saved_ids = st.session_state.get("saved_ids", []) or []
+    already_saved = business_id in saved_ids
+
+    row1 = st.columns(2, gap="small")
+    row2 = st.columns(2, gap="small")
+
+    if row1[0].button(
+        "Unsave" if already_saved else "Save",
+        key=f"{key_prefix}_save_{business_id}",
+        use_container_width=True,
+    ):
+        _handle_save_toggle(business_id, already_saved, saved_ids)
+
+    if row1[1].button(
+        "Focus map",
+        key=f"{key_prefix}_focus_{business_id}",
+        use_container_width=True,
+    ):
+        _handle_focus_map(business_id)
+
+    if row2[0].button(
+        "Comments",
+        key=f"{key_prefix}_comments_{business_id}",
+        use_container_width=True,
+    ):
+        _log_if_logged_in(business_id, "comments_opened")
+        open_comments_modal(name, restaurant.get("google_reviews", []))
+        st.rerun()
+
+    url = clean_text(restaurant.get("url", ""))
+    if url:
+        row2[1].link_button("Source", url, use_container_width=True)
+    else:
+        row2[1].button(
+            "No source",
+            key=f"{key_prefix}_nosource_{business_id}",
+            disabled=True,
+            use_container_width=True,
+        )
