@@ -14,6 +14,7 @@ from embeddings.cluster_retrieval import load_centroids, load_restaurant_index, 
 from embeddings.query_parser import parse_query, minimal_clean_query
 from embeddings.location_lookup import resolve_location_coordinate
 from embeddings.vectorizer import (
+    DEFAULT_EMBEDDING_MODEL,
     build_restaurant_index,
     embed_query,
     embed_user,
@@ -529,7 +530,7 @@ def _build_user_embedding_if_available(user_id: str) -> list[float] | None:
             vector = latest_embedding.get("vector")
             model = latest_embedding.get("model_name", "")
             if (isinstance(vector, list) and vector
-                    and model == "sentence-transformers/multi-qa-mpnet-base-cos-v1"):
+                    and model == DEFAULT_EMBEDDING_MODEL):
                 return vector
 
         user_document = str(profile.get("profile_text", "")).strip()

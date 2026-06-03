@@ -78,18 +78,54 @@ pip install -r requirements.txt
 ```bash
 MONGO_URI=...
 MONGO_DBNAME=NearBite
+MONGO_TIMEOUT_MS=2000
+NEARBITE_LOCAL_DB_PATH=data/local_db.json
+EMBEDDING_MODEL=sentence-transformers/multi-qa-mpnet-base-cos-v1
 ```
 
 Behavior:
 
 - If Mongo is reachable, collections are backed by MongoDB.
-- If Mongo is unavailable or not configured, app falls back to `data/local_db.json`.
+- If Mongo is unavailable or not configured, app falls back to `data/local_db.json` or `NEARBITE_LOCAL_DB_PATH`.
+- Use MongoDB for persistent production user accounts, saved restaurants, likes, reviews, and profiles. Local JSON storage is useful for demos but is ephemeral on most hosted containers.
+- `EMBEDDING_MODEL` should match the prebuilt embeddings in `data/restaurant_embeddings.json`.
 
 ### Run
 
 ```bash
 streamlit run app.py
 ```
+
+### DigitalOcean App Platform deployment
+
+Recommended deployment path: use the included `Dockerfile`.
+
+1. Push this repository to GitHub.
+2. Create a DigitalOcean App from the GitHub repository.
+3. Select Dockerfile-based deployment. The container command is already set to:
+
+```bash
+streamlit run app.py --server.address=0.0.0.0 --server.port=${PORT:-8501} --server.headless=true
+```
+
+4. Add production environment variables:
+
+```bash
+MONGO_URI=<your MongoDB Atlas or DigitalOcean Mongo connection string>
+MONGO_DBNAME=NearBite
+MONGO_TIMEOUT_MS=2000
+EMBEDDING_MODEL=sentence-transformers/multi-qa-mpnet-base-cos-v1
+```
+
+5. Set the HTTP health check path to:
+
+```text
+/_stcore/health
+```
+
+6. Deploy, then test signup/login, search, save/like/review, and profile questionnaire persistence.
+
+If you use DigitalOcean's Python buildpack instead of Docker, the included `Procfile` and `runtime.txt` provide the same Streamlit startup command and Python version hint.
 
 ## End-to-end request lifecycle
 
@@ -414,16 +450,18 @@ python testing/run_evaluation.py
 
 ## Security and production considerations
 
-Current implementation includes development-oriented shortcuts:
+Current production-oriented defaults:
 
-- passwords are stored in plain text in user records,
-- no explicit rate limiting,
-- no audit trail or role model.
+- New and reset passwords are stored as PBKDF2-SHA256 hashes.
+- Existing plaintext demo accounts are still accepted once and migrated to password hashes after successful login.
+- MongoDB is only used when `MONGO_URI` is explicitly configured.
+- If Mongo is not configured, the app uses local JSON storage as a temporary fallback.
 
-Before production deployment:
+Remaining production hardening work:
 
-- add password hashing (e.g., bcrypt/argon2),
 - add auth/session hardening,
+- add explicit rate limiting,
+- add audit trails or moderation controls for public-facing review/comment flows,
 - add secure secrets management and TLS validation policies,
 - add observability for ranking and retrieval quality metrics.
 

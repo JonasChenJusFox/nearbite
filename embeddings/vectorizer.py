@@ -4,8 +4,12 @@ The first model loaded via :func:`get_embedding_model` is cached for the process
 stages must use the same model as the offline index (default ``multi-qa-mpnet-base-cos-v1``).
 """
 
-from typing import Any
+from typing import Any, Optional
 
+from config.settings import EMBEDDING_MODEL
+
+
+DEFAULT_EMBEDDING_MODEL = EMBEDDING_MODEL
 
 # NOTE: This cache assumes a single model is used across the entire pipeline.
 # Calling get_embedding_model() with a different model_name after the first
@@ -13,7 +17,7 @@ from typing import Any
 _model_cache: Any = None
 
 
-def get_embedding_model(model_name: str = "sentence-transformers/multi-qa-mpnet-base-cos-v1") -> Any:
+def get_embedding_model(model_name: Optional[str] = None) -> Any:
     """Load and cache the SentenceTransformer embedding model.
 
     Args:
@@ -27,7 +31,7 @@ def get_embedding_model(model_name: str = "sentence-transformers/multi-qa-mpnet-
     if _model_cache is None:
         from sentence_transformers import SentenceTransformer
 
-        _model_cache = SentenceTransformer(model_name)
+        _model_cache = SentenceTransformer(model_name or DEFAULT_EMBEDDING_MODEL)
     return _model_cache
 
 

@@ -17,16 +17,11 @@ except ImportError:  # pragma: no cover - local fallback path
 
 load_dotenv()
 
-# Obfuscated to bypass GitHub secret scanning
-_user = "grader"
-_pw = "nyudemo2026"
-_host = "cluster0.imr8ede.mongodb.net"
-
-GRADER_URI = f"mongodb+srv://{_user}:{_pw}@{_host}/?retryWrites=true&w=majority"
-MONGO_URI = os.getenv("MONGO_URI", GRADER_URI)
+MONGO_URI = os.getenv("MONGO_URI", "").strip()
 MONGO_DBNAME = os.getenv("MONGO_DBNAME", "NearBite")
+MONGO_TIMEOUT_MS = int(os.getenv("MONGO_TIMEOUT_MS", "2000"))
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LOCAL_DB_PATH = REPO_ROOT / "data" / "local_db.json"
+LOCAL_DB_PATH = Path(os.getenv("NEARBITE_LOCAL_DB_PATH", REPO_ROOT / "data" / "local_db.json"))
 
 
 def _serialize(value):
@@ -170,7 +165,7 @@ def _init_mongo():
         mongo_client = MongoClient(
             MONGO_URI,
             tlsCAFile=certifi.where(),
-            serverSelectionTimeoutMS=1500,
+            serverSelectionTimeoutMS=MONGO_TIMEOUT_MS,
         )
         mongo_client.admin.command("ping")
         return mongo_client, mongo_client[MONGO_DBNAME]

@@ -17,7 +17,10 @@ YELP_DAILY_LIMIT = 500  # requests/day; cache responses locally
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/nearbite")
 
 # --- Embedding model ---
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_MODEL = os.getenv(
+    "EMBEDDING_MODEL",
+    "sentence-transformers/multi-qa-mpnet-base-cos-v1",
+)
 
 # --- App defaults ---
 DEFAULT_CITY = "New York City"
