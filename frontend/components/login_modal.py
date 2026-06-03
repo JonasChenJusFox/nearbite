@@ -1,13 +1,4 @@
-"""
-frontend/components/login_modal.py
-Owner: Jonas Chen
-
-Responsibilities:
-- Renders the login modal dialog
-- Collects username and password input
-- Supports navigation to sign up and forgot password flows
-- Updates authentication state after successful login
-"""
+"""Login ``@st.dialog``: credentials, links to signup/forgot password, and session auth."""
 
 from __future__ import annotations
 
@@ -19,13 +10,16 @@ from frontend.auth import (
     open_forgot_password_modal,
     open_signup_modal,
 )
+from frontend.components.dialog_gate import can_open_dialog
 
 
 def render_login_modal() -> None:
     if not st.session_state.get("show_login_modal", False):
         return
+    if not can_open_dialog("login_modal"):
+        return
 
-    @st.dialog("Log in")
+    @st.dialog("Log in", on_dismiss=close_login_modal)
     def _dialog() -> None:
         st.write("Log in to save restaurants, view your profile, and get personalized recommendations.")
 

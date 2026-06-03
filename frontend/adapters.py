@@ -1,30 +1,25 @@
-"""
-frontend/adapters.py
-Owner: Jonas Chen
-
-Responsibilities:
-- Converts raw restaurant records into frontend-friendly display data
-- Normalizes fields such as address, price, image, and review snippet
-- Computes travel time from the current origin
-- Provides helper functions for wrapped statistics and frontend filters
-- Keeps UI rendering logic separate from raw dataset structure
-"""
+"""Normalize API restaurant payloads for display, travel time, wrapped stats, and filter options."""
 
 from __future__ import annotations
 
-import math
 import re
+import html
 from collections import Counter
 
 import streamlit as st
 
-
-NYU_LAT = 40.7295
-NYU_LON = -73.9965
+from integration.api import (
+    NYU_LAT,
+    NYU_LON,
+    manhattan_distance_km as _manhattan_distance_km,
+    walking_minutes_from_distance_km as _walking_minutes_from_distance_km,
+)
 
 
 def clean_text(value: str) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"<[^>]*>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def shorten_text(value: str, limit: int = 160) -> str:
@@ -48,7 +43,7 @@ def get_current_origin() -> dict:
         and st.session_state.get("user_lon") is not None
     ):
         return {
-            "label": "My location",
+            "label": st.session_state.get("user_origin_label", "My location"),
             "lat": float(st.session_state["user_lat"]),
             "lon": float(st.session_state["user_lon"]),
         }
@@ -60,27 +55,19 @@ def get_current_origin() -> dict:
     }
 
 
-def set_user_origin(lat: float, lon: float) -> None:
+def set_user_origin(lat: float, lon: float, label: str = "My location") -> None:
     st.session_state.use_my_location = True
     st.session_state.user_lat = float(lat)
     st.session_state.user_lon = float(lon)
+    st.session_state.user_origin_label = label
 
 
 def reset_origin_to_nyu() -> None:
     st.session_state.use_my_location = False
     st.session_state.user_lat = None
     st.session_state.user_lon = None
+    st.session_state.user_origin_label = "NYU"
 
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    p1 = math.radians(lat1)
-    p2 = math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lon2 - lon1)
-
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def _minutes_from_current_origin(lat: float, lon: float) -> int:
@@ -88,10 +75,9 @@ def _minutes_from_current_origin(lat: float, lon: float) -> int:
         return 0
 
     origin = get_current_origin()
-    km = _haversine_km(origin["lat"], origin["lon"], lat, lon)
-
-    # loose product-style estimate
-    return max(5, round(km / 0.33))
+    km = _manhattan_distance_km(origin["lat"], origin["lon"], lat, lon)
+    minutes = _walking_minutes_from_distance_km(km)
+    return int(minutes or 0)
 
 
 def _extract_review_snippet(reviews: list) -> str:
@@ -158,11 +144,11 @@ def _extract_address(raw: dict) -> str:
 
 def _extract_price_display(raw: dict) -> str:
     price = clean_text(raw.get("price", ""))
-    if price:
+    if price and price.lower() not in {"unknown", "n/a", "na", "none", "null", "not available", "price not listed"}:
         return price
 
     price_original = clean_text(raw.get("price_original", ""))
-    if price_original:
+    if price_original and price_original.lower() not in {"unknown", "n/a", "na", "none", "null", "not available", "price not listed"}:
         return price_original
 
     try:
@@ -173,7 +159,7 @@ def _extract_price_display(raw: dict) -> str:
     if price_level > 0:
         return "$" * price_level
 
-    return "Price not listed"
+    return ""
 
 
 def normalize_restaurant(raw: dict) -> dict:
@@ -186,8 +172,24 @@ def normalize_restaurant(raw: dict) -> dict:
     if not isinstance(reviews, list):
         reviews = []
 
-    lat = _safe_float(raw.get("latitude"), 0.0)
-    lon = _safe_float(raw.get("longitude"), 0.0)
+    coords = raw.get("coordinates") or {}
+    lat = _safe_float(raw.get("latitude") or coords.get("latitude"), 0.0)
+    lon = _safe_float(raw.get("longitude") or coords.get("longitude"), 0.0)
+
+    backend_distance_km = raw.get("distance_km")
+    normalized_distance_km = (
+        _safe_float(backend_distance_km, 0.0)
+        if backend_distance_km is not None
+        else None
+    )
+
+    backend_travel_minutes = raw.get("travel_minutes")
+    if backend_travel_minutes is not None:
+        travel_minutes = int(_safe_float(backend_travel_minutes, 0.0))
+    elif normalized_distance_km is not None:
+        travel_minutes = int(_walking_minutes_from_distance_km(normalized_distance_km) or 0)
+    else:
+        travel_minutes = _minutes_from_current_origin(lat, lon)
 
     return {
     "business_id": clean_text(raw.get("business_id", "")),
@@ -209,27 +211,13 @@ def normalize_restaurant(raw: dict) -> dict:
     "google_reviews": reviews,
     "url": clean_text(raw.get("url", "")),
     "score": _safe_float(raw.get("score", 0.0)),
-    "travel_minutes": _minutes_from_current_origin(lat, lon),
+    "distance_km": normalized_distance_km,
+    "travel_minutes": travel_minutes,
 }
 
 
 def normalize_results(restaurants: list[dict]) -> list[dict]:
     return [normalize_restaurant(item) for item in restaurants if isinstance(item, dict)]
-
-
-def sort_results(restaurants: list[dict], focus_business_id: str | None = None) -> list[dict]:
-    normalized = normalize_results(restaurants)
-
-    def sort_key(item: dict):
-        focused_rank = 0 if focus_business_id and item["business_id"] == focus_business_id else 1
-        return (
-            focused_rank,
-            -(item.get("score", 0.0) or 0.0),
-            -(item.get("rating", 0.0) or 0.0),
-            item.get("name", ""),
-        )
-
-    return sorted(normalized, key=sort_key)
 
 
 def get_filter_options(restaurants: list[dict]) -> dict:

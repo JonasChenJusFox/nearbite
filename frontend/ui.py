@@ -1,14 +1,6 @@
-"""
-frontend/ui.py
-Owner: Jonas Chen
+"""Streamlit shell: theme, navigation, auth modals, and page routing.
 
-Responsibilities:
-- Main frontend router for the Streamlit app
-- Connects navigation state to page rendering
-- Passes restaurant data into the correct view
-- Stores frontend-ready data and filter options in session state
-- Coordinates the overall UI flow of the application
-- Initializes authentication state and global modal rendering
+Connects session state to Home, Discover, Profile, and Account views.
 """
 
 from __future__ import annotations
@@ -20,21 +12,53 @@ import streamlit as st
 from frontend.adapters import get_filter_options
 from frontend.auth import init_auth_state
 from frontend.components.comments_modal import render_comments_modal
+from frontend.components.dialog_gate import can_open_dialog, reset_dialog_gate
 from frontend.components.forgot_password_modal import render_forgot_password_modal
 from frontend.components.login_modal import render_login_modal
 from frontend.components.nav import render_nav
+from frontend.components.post_signup_questionnaire_dialog import (
+    render_post_signup_questionnaire_dialog,
+)
 from frontend.components.signup_modal import render_signup_modal
+from frontend.views.account import render_account
+from frontend.user_profile_state import init_user_profile_state
 from frontend.views.discover import render_discover
 from frontend.views.home import render_home
 from frontend.views.profile import render_profile
-from frontend.views.recommendation import render_recommendation
 
 PAGE_RENDERERS = {
     "Home": render_home,
     "Discover": render_discover,
     "Profile": render_profile,
-    "Recommendation": render_recommendation,
+    "Account": render_account,
 }
+
+
+def _init_help_state() -> None:
+    if "show_help_dialog" not in st.session_state:
+        st.session_state.show_help_dialog = True
+
+
+def _render_help_dialog() -> None:
+    if not st.session_state.get("show_help_dialog", False):
+        return
+    if not can_open_dialog("help_dialog"):
+        return
+
+    @st.dialog(
+        "How NearBite works",
+        on_dismiss=lambda: st.session_state.__setitem__("show_help_dialog", False),
+    )
+    def _dialog() -> None:
+        st.write("1. Search from Home or Discover using natural language like `cheap tacos in LES`.")
+        st.write("2. Use Advanced filters only if you want to narrow results manually.")
+        st.write("3. Save, like, or review places to personalize future results.")
+        st.write("4. Open Profile to complete your questionnaire and manage your private records.")
+        if st.button("Close", key="help_dialog_close", use_container_width=True):
+            st.session_state.show_help_dialog = False
+            st.rerun()
+
+    _dialog()
 
 
 def render_app(search_callable: Callable | None, preview_restaurants: list[dict]) -> None:
@@ -43,6 +67,9 @@ def render_app(search_callable: Callable | None, preview_restaurants: list[dict]
     to the currently selected page.
     """
     init_auth_state()
+    init_user_profile_state()
+    _init_help_state()
+    reset_dialog_gate()
 
     st.session_state.preview_restaurants = (
         preview_restaurants or st.session_state.get("preview_restaurants", [])
@@ -56,10 +83,16 @@ def render_app(search_callable: Callable | None, preview_restaurants: list[dict]
     render_signup_modal()
     render_forgot_password_modal()
     render_comments_modal()
+    render_post_signup_questionnaire_dialog()
+    _render_help_dialog()
 
     current_page = render_nav()
     renderer = PAGE_RENDERERS.get(current_page, render_home)
 
     st.markdown("<div class='nb-shell'>", unsafe_allow_html=True)
+    utility_cols = st.columns([1, 1, 5], gap="small")
+    if utility_cols[0].button("Help / How to use", key="open_help_button", use_container_width=True):
+        st.session_state.show_help_dialog = True
+        st.rerun()
     renderer(st.session_state.preview_restaurants)
     st.markdown("</div>", unsafe_allow_html=True)

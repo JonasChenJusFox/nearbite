@@ -1,235 +1,452 @@
-<p align="center">
-  <img src="frontend/assets/nearbite.svg" alt="NearBite Logo" width="140"/>
-</p>
+# NearBite
 
-# NearBite — Personalized NYC Restaurant Discovery
+NearBite is a Streamlit application for NYC restaurant discovery with semantic retrieval, hard constraints, and personalized ranking.  
+This README is an implementation-accurate, deep technical guide to the current pipeline.
 
-> Find your next favorite spot — by vibe, not just by stars.
-
-NearBite is a semantic restaurant discovery app for New York City. Unlike traditional apps that rely purely on structured filters (cuisine, price, rating), NearBite lets you search the way you actually think: *"cheap spicy ramen near NYU"* or *"cozy date night spot in the East Village"*. The system combines **semantic search**, **structured filtering**, and **personalized recommendations** based on your dining history.
-
----
-
-## Team
+## Team responsibilities
 
 | Name | Role |
-|------|------|
+| --- | --- |
 | Yue Li | Data pipeline & preprocessing |
 | Fidaa Abdulkareem | Semantic retrieval & embeddings |
 | Albee Zhou | Ranking algorithm & personalization |
 | Jonas Chen | Frontend, authentication, MongoDB integration, recommendation algorithm |
 | Nick Sidoti | Integration, infra & documentation |
 
----
+## Table of contents
 
-## Features
+- System overview
+- Project structure
+- Environment and startup
+- End-to-end request lifecycle
+- Query parsing and intent extraction
+- Filter model (explicit hard vs query hard vs soft preferences)
+- Personalization model (profile + interactions)
+- Retrieval model (cluster-first with fallback)
+- Ranking model and score composition
+- Data contracts and schemas
+- State and page behavior
+- Caching, performance, and failure behavior
+- Debugging and validation
+- Evaluation
+- Security and production considerations
+- Extension points
 
-- **User Authentication** — Sign up, log in, log out, and password reset flow
-- **Questionnaire-Based Recommendations** — Personalized top restaurant suggestions based on onboarding answers
-- **Saved Restaurants** — Logged-in users can save restaurants to their profile
-- **Semantic Search** — Type natural language queries; the system matches your intent using sentence embeddings
-- **Structured Filters** — Narrow by cuisine, price range ($–$$$$$), dietary restrictions, rating, neighborhood, and more
-- **Personalized Ranking** — Results ranked by a combination of semantic relevance and your interaction history
-- **Content-Based Recommendations** — "More like places you've liked" suggestions
-- **Map View** — See results plotted geographically across NYC boroughs
+## System overview
 
----
+At a high level, search flow is:
 
-## Repo Structure
+`user query + UI filters + user history -> parse -> vector build -> candidate retrieval -> hard filter -> rank -> display`
 
-```text
-nearbite/
-│
-├── app.py                              # Streamlit entry point
-├── requirements.txt                    # Python dependencies
-├── README.md                           # Project documentation and setup instructions
-├── .env.example                        # Environment variable template
-│
-├── data/
-│   ├── pipeline.py                     # Data ingestion, cleaning, and restaurant dataset loading (Yue)
-│   └── __init__.py
-│
-├── embeddings/
-│   ├── vectorizer.py                   # Embedding model, query vectorization, cosine similarity (Fidaa)
-│   ├── location_aware_vector_search.py # Location-aware semantic retrieval experiments
-│   └── __init__.py
-│
-├── recommendation/
-│   ├── algorithm.py                    # Sample: Questionnaire + wrapped-based recommendation algorithm (Jonas)
-│   └── __init__.py
-│
-├── frontend/
-│   ├── __init__.py
-│   ├── ui.py                           # Main app router and global modal rendering
-│   ├── theme.py                        # CSS/theme injection
-│   ├── state.py                        # Session state defaults for app UI
-│   ├── auth.py                         # Login, signup, logout, forgot-password state logic
-│   ├── user_profile_state.py           # Questionnaire/profile session state + DB sync
-│   ├── adapters.py                     # Frontend data normalization and shaping helpers
-│   │
-│   ├── views/
-│   │   ├── __init__.py
-│   │   ├── home.py
-│   │   ├── discover.py                 # Search, filtering, map, restaurant browsing
-│   │   ├── profile.py                  # Wrapped summary + saved restaurants + recommendation entry
-│   │   └── recommendation.py           # Questionnaire flow + personalized recommendations
-│   │
-│   ├── components/
-│   │   ├── __init__.py
-│   │   ├── nav.py
-│   │   ├── hero.py
-│   │   ├── map_view.py
-│   │   ├── location_picker.py
-│   │   ├── profile_form.py
-│   │   ├── onboarding_form.py          # User onboarding questionnaire form
-│   │   ├── restaurant_card.py          # Restaurant result card with save/focus/comments actions
-│   │   ├── comments_modal.py           # Global comments dialog
-│   │   ├── login_modal.py              # Log in modal
-│   │   ├── signup_modal.py             # Sign up modal
-│   │   ├── forgot_password_modal.py    # Password reset modal
-│   │   ├── wrapped_card.py
-│   │   └── empty_state.py
-│   │
-│   └── assets/
-│       ├── custom.css
-│       ├── nearbite.svg
-│       └── nearbite.png                # Optional page/tab icon
-│
-├── integration/
-│   ├── __init__.py
-│   ├── api.py                          # Glue layer: orchestrates search pipeline (Nick)
-│   ├── db.py                           # MongoDB connection setup
-│   ├── user_repo.py                    # MongoDB user accounts + questionnaire profile storage
-│   ├── interaction_repo.py             # Saved restaurant persistence
-│   └── wrapped_repo.py                 # User interaction logging + wrapped summary generation
-│
-├── config/
-│   ├── settings.py                     # Environment variables and app-wide constants (Nick)
-│   └── __init__.py
-│
-└── tests/
-    ├── test_pipeline.py
-    ├── test_vectorizer.py
-    ├── test_api.py
-    └── test_algorithm.py               
+Core design principles in the current implementation:
 
-## Setup
+- Keep semantic retrieval always active in Discover.
+- Treat user-entered filter controls as strict when explicit.
+- Treat parsed intent hints as soft unless they are clearly explicit constraints.
+- Preserve query semantics during embedding (minimal cleaning only).
+- Degrade gracefully: no Mongo, no cluster artifacts, or no user vector should not break search.
 
-### 1. Clone the repo
+## Project structure
+
+Primary modules involved in runtime search:
+
+- `app.py`: app bootstrap and page configuration.
+- `frontend/ui.py`: shell router, global dialogs, and page rendering.
+- `frontend/views/discover.py`: query UX, advanced filters, map/cards, backend call.
+- `integration/api.py`: orchestration layer for parse/retrieve/filter/rank.
+- `embeddings/query_parser.py`: deterministic text signal extraction.
+- `embeddings/vectorizer.py`: embedding model and vector utility functions.
+- `embeddings/cluster_retrieval.py`: cluster-level candidate retrieval from prebuilt assets.
+- `recommendation/ranker.py`: score calculation and weighted preference boosts.
+- `data/pipeline.py`: restaurant loading and interaction loading.
+- `integration/db.py`: Mongo initialization with local JSON fallback.
+- `integration/user_repo.py`: account/profile storage and embedding cache updates.
+
+## Environment and startup
+
+### Python environment
 
 ```bash
-git clone https://github.com/JonasChenJusFox/ML_FinalProject.git
-cd ML_FinalProject
-```
-
-### 2. Create and activate a virtual environment
-
-```bash
-python -m venv venv
-source venv/bin/activate      # macOS / Linux
-venv\Scripts\activate         # Windows
-```
-
-### 3. Install dependencies
-
-```bash
-python3 -m pip install --upgrade pip
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
+### Optional environment variables
 
 ```bash
-cp .env.example .env
-# Edit .env and add your MongoDB database username and key
+MONGO_URI=...
+MONGO_DBNAME=NearBite
 ```
 
-### 5. Run the app
+Behavior:
+
+- If Mongo is reachable, collections are backed by MongoDB.
+- If Mongo is unavailable or not configured, app falls back to `data/local_db.json`.
+
+### Run
 
 ```bash
 streamlit run app.py
 ```
 
----
+## End-to-end request lifecycle
 
-## Data Sources
+Search entrypoint: `integration/api.py::search_restaurants`.
 
-| Source | Used For |
-|--------|----------|
-| [Yelp Fusion API](https://fusion.yelp.com/) | Live restaurant metadata (name, rating, price, categories, hours). Limited to 500 req/day — responses cached locally. |
-| [Google Places API](https://developers.google.com/maps/documentation/places/web-service/overview) | Live review text for sentiment analysis, semantic embedding, and vibe matching. |
-| [NYC Open Data — DOHMH Restaurant Inspections](https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/43nn-pn8j/about_data) | Supplemental official restaurant registry |
-| [TripAdvisor NYC Dataset (Kaggle, 10k+)](https://www.kaggle.com/datasets/rayhan32/trip-advisor-newyork-city-restaurants-dataset-10k) | Review text for vibe tag extraction and NLP training |
-| [Yelp Open Dataset (Kaggle)](https://www.kaggle.com/datasets/yelp-dataset/yelp-dataset) | Sentiment analysis and embedding model training (NYC subset) |
-| Synthetic user data | User interaction history for personalization development |
+Sequence for Discover (`user_vector_only=False`):
 
-> ⚠️ The Kaggle Yelp NYC dataset (2004–2015) is outdated and should **not** be used as the live recommendation source. It is used only for NLP training and vibe tag extraction.
+1. Adapt frontend filter payload to canonical backend fields.
+2. Parse query text into deterministic intent signals.
+3. Build explicit/query hard filter stages and soft preference stage.
+4. Build user vector (profile + interactions) when available.
+5. Embed the query and fuse query/user vectors.
+6. Retrieve candidate restaurants (cluster-first, then global fallback).
+7. Add distance/travel metadata from active origin.
+8. Apply hard filters.
+9. Apply soft fallback when hard filters are too restrictive.
+10. Rank candidates using semantic + structured + soft boosts.
+11. Return top-k sorted results with scoring metadata.
 
----
+## Query parsing and intent extraction
 
-## Algorithm
+Parser: `embeddings/query_parser.py::parse_query`.
 
-To meet the course requirement, **cosine similarity is implemented from scratch** (no NumPy or scikit-learn) in `embeddings/vectorizer.py`:
+Signals extracted:
 
-```python
-def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
-    dot_product = sum(v1 * v2 for v1, v2 in zip(vec1, vec2))
-    norm_vec1 = sum(v ** 2 for v in vec1) ** 0.5
-    norm_vec2 = sum(v ** 2 for v in vec2) ** 0.5
-    if norm_vec1 == 0 or norm_vec2 == 0:
-        return 0.0
-    return dot_product / (norm_vec1 * norm_vec2)
-```
+- Price intent (`cheap`, `moderate`, `expensive`, `luxury`, etc.).
+- Dietary terms (`vegan`, `vegetarian`, `halal`, `kosher`, `gluten-free`).
+- Cuisine terms (`ramen`, `thai`, `italian`, etc.).
+- Occasion/vibe terms (`date_night`, `cozy`, `lively`, etc.).
+- Meal context (`lunch`, `dinner`, `late_night`, etc.).
+- Location cues:
+  - direct labels (`NYU`, boroughs, neighborhoods),
+  - zip code,
+  - `in <place>` and `near <place>` strict-place detection.
+- Distance-time intent (`under 20 minutes`, `within 3 km`, `near me`).
 
-This drives the semantic retrieval step: every user query is embedded and ranked against all pre-computed restaurant embeddings using this function.
+Important detail:
 
----
+- `minimal_clean_query` intentionally does **not** strip semantic tokens; it only normalizes whitespace.
+- This preserves user intent for embedding similarity.
 
-## Search Pipeline
+## Filter model
 
-```
-User Query (natural language)
-        │
-        ▼
-  Query Embedding          ← embeddings/vectorizer.py
-        │
-        ▼
-Semantic Candidate Retrieval (cosine similarity, top-K)
-        │
-        ▼
-Structured Filtering         ← recommendation/ranker.py
-(price, cuisine, dietary, distance, open_now ...)
-        │
-        ▼
-Personalized Ranking         ← recommendation/ranker.py
-(semantic score + user history + popularity signal)
-        │
-        ▼
-   Final Results Display     ← frontend/ui.py
-   (ranked cards + map view)
-```
+Filter adaptation is handled by `integration/api.py::_adapt_filters`.
 
----
+### Canonical fields
 
-## Tech Stack
+Adapted filter payload can include:
 
-- **Frontend**: Streamlit
-- **Backend / API**: Python (Flask integration layer planned)
-- **Database**: MongoDB Atlas
-- **Embeddings**: sentence-transformers (`all-MiniLM-L6-v2`)
-- **Hosting**: DigitalOcean
-- **Design**: Figma ([view mockup](https://www.figma.com/design/zUGZE1xR7Cmf2L2Rhprhge/NearBiteWithIcon))
+- `cuisines`
+- `price`
+- `min_rating`
+- `max_distance_km`
+- `borough`
+- `origin_lat`, `origin_lon`
+- `dietary`
+- `strict_dietary`
+- explicitness booleans (`explicit_cuisines`, `explicit_price`, etc.)
 
----
+### Three-stage filter strategy
 
-## Running Tests
+Built by `_build_filter_stages`:
+
+1. `explicit_hard_filters`
+   - only constraints explicitly set in UI.
+2. `query_hard_filters`
+   - starts from explicit filters and adds strict parsed constraints (e.g., hard borough from `in manhattan`).
+3. `soft_preferences`
+   - parsed hints used as ranking boosts (not immediate exclusions), including cuisine, dietary, location, vibe, meal type, and price hints.
+
+### Why this split exists
+
+The split avoids over-pruning results due to aggressive parser assumptions while still honoring explicit user controls.
+
+## Personalization model
+
+Personalization vectors are built in `integration/api.py`:
+
+- Profile vector: generated from questionnaire-derived `profile_text` via `embed_user`, cached in profile as `latest_embedding`.
+- Interaction vector: weighted average of embeddings for interacted businesses.
+
+Interaction weights:
+
+- `save`: `1.0`
+- `like`: `1.5`
+- `review/love`: `2.0`
+- `review/neutral`: `0.5`
+- `review/hate`: `0.0`
+
+Blending:
+
+- `PROFILE_VECTOR_WEIGHT = 0.7`
+- `INTERACTION_VECTOR_WEIGHT = 0.3`
+
+Final user vector is L2-normalized. Missing components degrade gracefully.
+
+## Retrieval model
+
+Primary retrieval method: cluster-first.
+
+### Cluster-first path
+
+Uses:
+
+- `data/restaurant_embeddings.json`
+- `data/cluster_centroids.json`
+
+Flow:
+
+1. Load centroids and indexed embeddings.
+2. Compute similarity between fused query vector and centroids.
+3. Select nearest clusters.
+4. Score items inside selected clusters.
+5. Map `business_id` back to full restaurant records.
+
+### Fallback path
+
+If cluster assets are missing or fail to load:
+
+- Build in-memory index from `data/restaurants.json` (or pre-existing embedded vectors).
+- Retrieve global top-k via `retrieve_top_k`.
+
+Candidate pool size is widened dynamically (`top_k * 15` with a minimum of 200 for category intents, or `top_k * 5` otherwise) before filtering to preserve headroom.
+
+## Hard filtering and fallback behavior
+
+After retrieval, candidates are enriched with:
+
+- `distance_km` (Manhattan-style approximation),
+- `travel_minutes` (based on 5 km/h walking speed).
+
+Hard filtering sequence:
+
+1. `explicit_hard_filters`
+2. `query_hard_filters`
+3. Optional strict neighborhood radius clamp for parsed `in/near <neighborhood>` signals.
+
+If output count is too small:
+
+- fallback to explicit-filtered pool,
+- then fallback to full candidate pool.
+
+This prevents empty results from over-constrained parsing while preserving strongest constraints first.
+
+## Ranking model and score composition
+
+Ranker: `recommendation/ranker.py::rank_candidates`.
+
+### Base score components
+
+Default normalized component weights:
+
+- `semantic`: `0.60`
+- `rating`: `0.10`
+- `popularity`: `0.05`
+- `price_match`: `0.05`
+- `distance`: `0.20`
+
+Component definitions:
+
+- Semantic: cosine similarity from retrieval stage.
+- Rating: normalized from 0-5 to 0-1.
+- Popularity: bounded log transform of review count.
+- Price match: discrete compatibility score between user preference and restaurant price band.
+- Distance: proximity score (closer is better).
+
+### Soft preference boosts
+
+Additional weighted boosts are applied for:
+
+- dietary
+- location
+- cuisine
+- price
+- vibe
+- meal type
+
+Boost weights (separate from base score weights):
+
+- dietary `0.80`
+- cuisine `0.40`
+- location `0.25`
+- price `0.15`
+- vibe `0.10`
+- meal type `0.10`
+
+Final outputs per restaurant include:
+
+- `semantic_score`
+- `final_score`
+- `score_breakdown`
+- `soft_preference_boost`
+- `dietary_match_boost`
+
+## Data contracts and schemas
+
+### Restaurant record (runtime expectation)
+
+Typical fields used across modules:
+
+- `business_id` (string)
+- `name` (string)
+- `rating` (float)
+- `review_count` (int)
+- `price` (string like `$`, `$$`, `$$$`)
+- `categories` (list[str] or list[dict])
+- `latitude`, `longitude` or `coordinates`
+- `borough`, `neighborhood`
+- `embedding_text` (string used for semantic embedding)
+- optional `embedding` (list[float])
+
+### User profile record
+
+Stored in `user_profiles`:
+
+- `username`
+- `raw_answers`
+- `normalized_features`
+- `profile_text`
+- `latest_embedding`:
+  - `vector`
+  - `model_name`
+  - `updated_at`
+
+### User interaction record
+
+Expected normalized fields:
+
+- `user_id`
+- `business_id`
+- `interaction_type` (`save`, `like`, `review`)
+- `review_signal` (`love`, `neutral`, `hate`) for review records
+- `timestamp`
+
+## State and page behavior
+
+### Discover behavior
+
+`frontend/views/discover.py`:
+
+- always uses `search_restaurants(..., user_vector_only=False)`,
+- submits query and filters from session state,
+- tracks visible results incrementally,
+- resets map focus when result signature changes.
+
+Advanced filter controls are optional; query-first flow remains primary.
+
+### Profile behavior
+
+`frontend/views/profile.py`:
+
+- requires login,
+- renders wrapped summary and interaction-linked restaurants,
+- exposes questionnaire edit action,
+- reads profile/interactions from repo layer.
+
+## Caching, performance, and failure behavior
+
+### Caching
+
+`integration/api.py` keeps module-level caches for:
+
+- full restaurant list,
+- global embedding index,
+- cluster assets (index + centroids).
+
+### Performance characteristics
+
+- First request can be slower due to model load/download.
+- Cluster assets substantially reduce retrieval search scope.
+- Candidate oversampling (typically `top_k * 5` to `top_k * 15`) improves final ranking quality under strict filters.
+
+### Failure behavior (graceful degradation)
+
+- No Mongo: local JSON db fallback.
+- No cluster artifacts: global retrieval fallback.
+- No user vector: query-only retrieval/ranking still works.
+- No interactions/profile: personalization path is skipped without breaking search.
+
+## Debugging and validation
+
+### Fast sanity checks
 
 ```bash
-pytest tests/
+python -c "from integration.api import search_restaurants; r=search_restaurants('cheap spicy ramen near nyu', {'discover_borough':'All'}, user_id='anonymous', top_k=5); print(len(r), [x.get('name') for x in r[:3]])"
 ```
 
----
+```bash
+python -m embeddings.cluster_retrieval --query 'cozy japanese spot' --k 5
+```
 
-## Task Board
+### Pipeline diagnostics to inspect
 
-[GitHub Project Board](https://github.com/users/JonasChenJusFox/projects/2/views/1)
+When debugging ranking/retrieval regressions, verify:
+
+- parsed query object,
+- explicit vs query hard filter payloads,
+- candidate count pre-filter and post-filter,
+- ranking pool size after fallback,
+- top result `score_breakdown`.
+
+## Evaluation
+
+The application includes an offline evaluation pipeline located in `testing/run_evaluation.py`. It runs against CSV fixtures to assess the pipeline's accuracy, relevance, and performance.
+
+### Evaluation metrics
+
+- **Parser exact match accuracy**: Measures how often the deterministic parser perfectly extracts all hard constraints (price, dietary, cuisine, location) compared to human-labeled ground truth.
+- **Average constraint match @5**: Evaluates the top 5 retrieved restaurants to measure the average percentage of explicit query constraints they satisfy.
+- **Average precision @5**: The ratio of retrieved restaurants in the top 5 that are deemed relevant. A restaurant is considered relevant if it meets at least 50% of the expected constraints.
+- **Average personalization lift @5**: Tests search scenarios using synthetic user profiles. Measures the percentage increase in results matching the user's hidden preference tags when using personalized vectors versus an anonymous search.
+- **Average latency**: Measures the end-to-end query processing time (in milliseconds) per search.
+- **Total crashes**: Tracks any unhandled exceptions during the evaluation suite.
+
+### Running the pipeline
+
+Run the evaluation script from the project root:
+
+```bash
+python testing/run_evaluation.py
+```
+
+## Security and production considerations
+
+Current implementation includes development-oriented shortcuts:
+
+- passwords are stored in plain text in user records,
+- no explicit rate limiting,
+- no audit trail or role model.
+
+Before production deployment:
+
+- add password hashing (e.g., bcrypt/argon2),
+- add auth/session hardening,
+- add secure secrets management and TLS validation policies,
+- add observability for ranking and retrieval quality metrics.
+
+## Extension points
+
+Common extension patterns:
+
+- Add parser intents in `embeddings/query_parser.py` and map them to `soft_preferences`.
+- Add strict filters by extending `_adapt_filters` and `_apply_base_hard_filters`.
+- Tune ranking behavior by editing `DEFAULT_RANKING_WEIGHTS` and `BOOST_WEIGHTS`.
+- Swap retrieval strategy by extending `_retrieve_candidates_cluster_first`.
+- Add A/B comparisons using `debug_compare_queries`.
+
+## Artifact generation reference
+
+Build cluster artifacts:
+
+```bash
+python -m embeddings.build_index --input data/restaurants.json --k 20
+```
+
+Run optional elbow analysis:
+
+```bash
+python -m embeddings.elbow --input data/restaurants.json
+```

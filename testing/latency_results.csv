@@ -1,0 +1,104 @@
+query,total_time_ms
+cheap vegan food near NYU,8890.279769897461
+expensive sushi in Brooklyn,131.00624084472656
+halal carts in Queens,86.33112907409668
+moderately priced italian in Manhattan,99.55096244812012
+best cheap tacos,144.7298526763916
+plant-based brunch spots,150.60901641845703
+luxury steakhouses midtown,101.75323486328125
+vegetarian ramen in East Village,81.88104629516602
+budget friendly chinese food,96.34208679199219
+affordable dairy-free desserts,112.49899864196777
+upscale french dining west village,93.10483932495117
+moderate thai food brooklyn,85.61372756958008
+fancy seafood near me,76.26080513000488
+cheap pizza queens,142.3931121826172
+healthy gluten-free lunch,78.75585556030273
+best dim sum chinatown,87.86416053771973
+meatless burgers,99.5171070098877
+kosher deli brooklyn,110.95213890075684
+cheap coffee shop,106.91213607788086
+fine dining italian,106.21809959411621
+moderate korean bbq,76.52878761291504
+halal middle eastern food,81.62999153137207
+affordable mexican food,102.47397422790527
+luxury omakase manhattan,81.6960334777832
+vegan friendly indian,91.11666679382324
+pizza,145.1892852783203
+tacos,143.34702491760254
+cheap,96.47917747497559
+vegan,77.9733657836914
+burgers,92.34118461608887
+sushi,85.59799194335938
+coffee,105.68809509277344
+drinks,105.62586784362793
+bbq,103.95193099975586
+healthy,76.65205001831055
+I am feeling very hungry and would love some spicy thai food right now near midtown Manhattan that won't break the bank,145.73383331298828
+Looking for a super romantic and extremely expensive Italian place to take my girlfriend for our 5th anniversary in Brooklyn,140.97905158996582
+My friends and I want to get some cheap late night pizza or maybe some burgers in Queens after we go out drinking,93.81318092346191
+Is there any place that serves gluten-free baked goods or healthy desserts that is moderately priced near the village,92.86999702453613
+We need a massive seafood feast for a group of 10 people somewhere upscale in Staten Island,113.08979988098145
+Honestly literally anywhere that serves food,83.74905586242676
+I just want something to eat I don't care what it is,119.91596221923828
+Can you find me a place with good vibes and strong cocktails but also vegan options,117.74086952209473
+My parents are in town and we need a nice sit down French brasserie that is quiet,126.42884254455566
+Show me the best rated halal carts that serve chicken over rice for under 10 dollars,79.96487617492676
+expensive cheap food,87.5389575958252
+vegan steakhouse,90.49677848815918
+meatless bbq,87.3410701751709
+gluten-free pasta in the bronx,149.3208408355713
+healthy deep fried butter,81.72798156738281
+cheap luxury omakase,83.81795883178711
+seafood for someone allergic to fish,79.68592643737793
+dairy free ice cream,99.43604469299316
+kosher bacon cheeseburger,86.19475364685059
+halal pork chops,75.8810043334961
+DROP TABLE restaurants;--,90.86990356445312
+'; UPDATE users SET role='admin';--,79.78415489196777
+"<script>alert(""xss"")</script>",95.95584869384766
+undefined,102.34618186950684
+null,79.14423942565918
+NaN,86.17997169494629
+       ,11.661052703857422
+\n\n\n\n\t\t\t\t\t,73.56905937194824
+🍔🌮🍕,89.15209770202637
+1234567890,89.76101875305176
+near 40.7128 -74.0060,127.82430648803711
+SELECT * FROM restaurants WHERE price='cheap',85.70504188537598
+DROP DATABASE nearbite;,107.70106315612793
+cheap food in !@#$%^&*()_+,114.2878532409668
+한국 음식,109.2679500579834
+comida mexicana barata,116.54400825500488
+very very very very very very very cheap food,86.33708953857422
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,133.45670700073242
+I hate italian food,124.23396110534668
+not pizza,111.93203926086426
+anything but sushi,79.65803146362305
+I want to eat at McDonalds,108.9327335357666
+give me the most expensive restaurant in the entire world,81.38108253479004
+something cheap,96.90499305725098
+a place to study with wifi,84.7160816192627
+dog friendly cafe,127.47502326965332
+kid friendly brunch,132.05885887145996
+romantic dark lighting date night,94.8641300201416
+rooftop bar with a view,117.62189865112305
+bottomless brunch,114.45212364196777
+late night eats after 2am,101.1819839477539
+where can I get a good salad,71.04992866516113
+show me Michelin star places,87.6007080078125
+i need to book a private room for 20 people,100.56090354919434
+good for groups,114.52698707580566
+outdoor seating,98.42419624328613
+cheap eats near me,83.40191841125488
+food,93.0471420288086
+dinner,94.37894821166992
+lunch,87.35895156860352
+breakfast,101.23801231384277
+snack,74.62501525878906
+dessert,97.55802154541016
+hungry,79.27107810974121
+eat,79.72407341003418
+feed me,89.36715126037598
+starving,78.81784439086914
+give me food,80.3673267364502

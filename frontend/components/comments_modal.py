@@ -1,13 +1,4 @@
-"""
-frontend/components/comments_modal.py
-Owner: Jonas Chen
-
-Responsibilities:
-- Renders a single global comments modal
-- Displays review snippets for the currently selected restaurant
-- Reads comment dialog state from Streamlit session state
-- Prevents multiple dialogs from being opened in the same script run
-"""
+"""Global review-snippet dialog; respects :func:`frontend.components.dialog_gate.can_open_dialog`."""
 
 from __future__ import annotations
 
@@ -16,6 +7,7 @@ import html
 import streamlit as st
 
 from frontend.adapters import clean_text
+from frontend.components.dialog_gate import can_open_dialog
 
 
 def init_comments_modal_state() -> None:
@@ -46,8 +38,10 @@ def render_comments_modal() -> None:
 
     if not st.session_state.get("show_comments_modal", False):
         return
+    if not can_open_dialog("comments_modal"):
+        return
 
-    @st.dialog("Comments")
+    @st.dialog("Comments", on_dismiss=close_comments_modal)
     def _dialog() -> None:
         name = st.session_state.get("comments_modal_restaurant_name", "Restaurant")
         reviews = st.session_state.get("comments_modal_reviews", [])

@@ -1,13 +1,4 @@
-"""
-frontend/state.py
-Owner: Jonas Chen
-
-Responsibilities:
-- Initializes Streamlit session state defaults
-- Stores temporary UI data such as saved restaurants and viewed restaurants
-- Maintains current page, search state, and location state
-- Supports profile, wrapped, and map interactions across reruns
-"""
+"""Default session keys for navigation, search, filters, and profile-related UI."""
 
 from __future__ import annotations
 
@@ -42,6 +33,9 @@ def init_state(preview_restaurants: list[dict]) -> None:
     if "user_lon" not in st.session_state:
         st.session_state.user_lon = None
 
+    if "user_origin_label" not in st.session_state:
+        st.session_state.user_origin_label = "NYU"
+
     if "page" not in st.session_state:
         st.session_state.page = "Home"
 
@@ -56,6 +50,12 @@ def init_state(preview_restaurants: list[dict]) -> None:
 
     if "saved_ids" not in st.session_state:
         st.session_state.saved_ids = []
+
+    if "liked_ids" not in st.session_state:
+        st.session_state.liked_ids = []
+
+    if "interaction_map" not in st.session_state:
+        st.session_state.interaction_map = {}
 
     if "viewed_ids" not in st.session_state:
         st.session_state.viewed_ids = []

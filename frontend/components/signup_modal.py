@@ -1,26 +1,20 @@
-"""
-frontend/components/signup_modal.py
-Owner: Jonas Chen
-
-Responsibilities:
-- Renders the sign up modal dialog
-- Collects username, email, and password input
-- Creates a new user account in MongoDB
-- Logs the user in immediately after successful account creation
-"""
+"""Signup ``@st.dialog``: new user fields, MongoDB create, and immediate login."""
 
 from __future__ import annotations
 
 import streamlit as st
 
 from frontend.auth import close_signup_modal, open_login_modal, signup
+from frontend.components.dialog_gate import can_open_dialog
 
 
 def render_signup_modal() -> None:
     if not st.session_state.get("show_signup_modal", False):
         return
+    if not can_open_dialog("signup_modal"):
+        return
 
-    @st.dialog("Sign up")
+    @st.dialog("Sign up", on_dismiss=close_signup_modal)
     def _dialog() -> None:
         st.write("Create an account to save restaurants and receive personalized recommendations.")
 
