@@ -27,7 +27,7 @@ python -m embeddings.cluster_retrieval --query "cozy japanese spot with great se
   - `vectorizer.py`: model loading, embedding helpers, cosine similarity.
   - `build_index.py`: offline embedding + clustering, writes retrieval files.
 - Optional or integration-dependent:
-  - `cluster_retrieval.py`: query-time candidate retrieval from those files. May not be used if another teammate's retrieval implementation is integrated.
+  - `cluster_retrieval.py`: query-time candidate retrieval from those files when semantic mode is enabled.
 - Investigation only:
   - `elbow.py`: elbow plot for selecting K.
 - Convenience:
@@ -129,4 +129,3 @@ python -m embeddings.elbow \
 - Run commands from repo root, or adjust paths.
 - If your data, model, or K value changes, rerun `build_index.py` to regenerate the output files.
 - Keep the same embedding model for both indexing and query-time retrieval.
-

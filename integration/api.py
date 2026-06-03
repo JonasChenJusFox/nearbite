@@ -25,9 +25,6 @@ from embeddings.vectorizer import (
 from recommendation.ranker import fuse_vectors, rank_candidates, _normalize_price_level
 from integration.user_repo import get_user_profile, update_latest_embedding
 
-# ---------------------------------------------------------------------------
-# Module-level cache (populated on first call)
-# ---------------------------------------------------------------------------
 _restaurant_index = None
 _restaurants = None
 _cluster_restaurant_index = None
@@ -261,7 +258,6 @@ def _with_distance_km(restaurants: list[dict], origin_lat: float | None = None, 
     Returns:
         List of restaurants with added/updated distance_km field
     """
-    # Use provided origin or fall back to NYU
     if origin_lat is None:
         origin_lat = NYU_LAT
     if origin_lon is None:
@@ -337,7 +333,6 @@ def _rank_by_location_and_rating(
     filters: dict,
     top_k: int,
 ) -> list[dict]:
-    # Extract origin coordinates from filters if available, else use NYU
     origin_lat = _safe_float(filters.get("origin_lat"), NYU_LAT)
     origin_lon = _safe_float(filters.get("origin_lon"), NYU_LON)
     
@@ -674,7 +669,6 @@ def _build_filter_stages(
         meal_types.append(parsed_meal_type.strip().lower())
     
     if meal_types:
-        # remove duplicates
         soft_preferences["meal_type"] = list(dict.fromkeys(meal_types))
 
     place = parsed_query.get("in_near_place_filter")
@@ -689,7 +683,6 @@ def _build_user_embedding_if_available(user_id: str) -> list[float] | None:
     if not user_id or user_id == "anonymous":
         return None
 
-    # Tier 1 & 2: profile-based embedding
     profile = get_user_profile(user_id)
     if profile:
         latest_embedding = profile.get("latest_embedding")
@@ -872,10 +865,6 @@ def _retrieve_candidates_cluster_first(
     return retrieve_top_k(fused_vector, index, k=k)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 def search_restaurants(
     query: str,
     filters: dict | None,
@@ -900,7 +889,6 @@ def search_restaurants(
     query_text = (query or "").strip()
     use_recommendation_mode = user_vector_only or not query_text
 
-    # Step 1: Parse explicit UI filters and query intents
     adapted_filters = _adapt_filters(filters)
     parsed_query = None
     embedding_query_text = query_text
@@ -918,14 +906,12 @@ def search_restaurants(
             requested_top_k=requested_top_k,
         )
 
-    # Step 2: Build Filter Stages (Hard constraints vs Soft boosts)
     explicit_hard_filters, query_hard_filters, soft_preferences = _build_filter_stages(
         adapted_filters,
         parsed_query,
     )
 
 
-    # Step 3: Build User Vector
     profile_vector = _build_user_embedding_if_available(user_id)
     interaction_vector = _build_interaction_vector(user_id)
     user_vector = _blend_vectors(
@@ -935,12 +921,10 @@ def search_restaurants(
         right_weight=INTERACTION_VECTOR_WEIGHT,
     )
 
-    # Step 4: Recommendation Mode Fallback (No embedding available)
     if use_recommendation_mode:
         if user_vector is None:
             fallback_restaurants = _get_restaurants()
             explicit_fallback = apply_strict_filters(fallback_restaurants, explicit_hard_filters)
-            # Soft Fallback: Do not return 0 results due to hard constraints if possible
             fallback_pool = explicit_fallback if explicit_fallback else fallback_restaurants
             return _rank_by_location_and_rating(
                 restaurants=fallback_pool,
@@ -948,8 +932,6 @@ def search_restaurants(
                 top_k=requested_top_k,
             )
 
-    # Step 5: Embed Query and Fuse Vectors
-    # Use personalization as a tie-breaker for explicit queries, stronger for vague queries
     is_explicit_food_query = bool(
         soft_preferences.get("cuisines") or
         soft_preferences.get("dietary") or
@@ -964,19 +946,16 @@ def search_restaurants(
         query_vector = embed_query(embedding_query_text)
         fused_vector = fuse_vectors(query_vector, user_vector, alpha=dynamic_alpha)
 
-    # Step 6: Retrieve semantic candidates (fetch dynamically based on category intent)
     parsed_cuisines = (parsed_query.get("cuisine") or parsed_query.get("cuisines") or []) if parsed_query else []
     has_category_intent = bool(parsed_cuisines or explicit_hard_filters.get("cuisines"))
     candidate_k = max(requested_top_k * 15, 200) if has_category_intent else requested_top_k * 5
     candidates = _retrieve_candidates_cluster_first(fused_vector, k=candidate_k)
 
 
-    # Step 7: Apply structured hard filters
     origin_lat = _safe_float(adapted_filters.get("origin_lat"), NYU_LAT)
     origin_lon = _safe_float(adapted_filters.get("origin_lon"), NYU_LON)
     candidate_restaurants = _with_distance_km([r for r, _ in candidates], origin_lat, origin_lon)
     
-    # 1. Resolve filters: UI takes precedence over Parsed constraints
     resolved_filters = {}
     
     if adapted_filters.get("explicit_cuisines") and adapted_filters.get("cuisines"):
@@ -1015,10 +994,8 @@ def search_restaurants(
         if isinstance(d_intent, dict) and d_intent.get("max_km") is not None:
             resolved_filters["max_distance_km"] = d_intent.get("max_km")
 
-    # Wave 1: Strict match pool
     wave_1_pool = apply_strict_filters(candidate_restaurants, resolved_filters)
     
-    # Neighborhood / Point Radius strict filtering for Wave 1
     if not adapted_filters.get("explicit_max_distance") and parsed_query:
         place = parsed_query.get("in_near_place_filter")
         if isinstance(place, dict) and place.get("kind") == "neighborhood":
@@ -1035,14 +1012,12 @@ def search_restaurants(
                 )
                 resolved_filters["location"] = place.get("name", "neighborhood")
 
-    # Step 8: Rank Candidates
     score_map = {
         str(restaurant.get("business_id", "")): score
         for restaurant, score in candidates
         if isinstance(restaurant, dict)
     }
 
-    # Pass resolved filters into soft_preferences to use as boosts/penalties in ranking
     if "cuisines" in resolved_filters: soft_preferences["cuisines"] = resolved_filters["cuisines"]
     if "dietary" in resolved_filters: soft_preferences["dietary"] = resolved_filters["dietary"]
     if "price" in resolved_filters and resolved_filters["price"]: soft_preferences["price"] = resolved_filters["price"][0]
@@ -1050,7 +1025,6 @@ def search_restaurants(
     if "max_distance_km" in resolved_filters: soft_preferences["max_distance_km"] = resolved_filters["max_distance_km"]
     if "location" in resolved_filters: soft_preferences["location"] = resolved_filters["location"]
 
-    # Rank Wave 1 (Strict matches)
     w1_with_scores = [
         (restaurant, score_map.get(str(restaurant.get("business_id", "")), 0.0))
         for restaurant in wave_1_pool
@@ -1061,10 +1035,8 @@ def search_restaurants(
         top_k=requested_top_k,
     )
 
-    # Wave 2: Fallback pool (Explicit UI filters only)
     wave_2_pool = apply_strict_filters(candidate_restaurants, explicit_hard_filters)
     
-    # Rank Wave 2
     w2_with_scores = [
         (restaurant, score_map.get(str(restaurant.get("business_id", "")), 0.0))
         for restaurant in wave_2_pool
@@ -1075,7 +1047,6 @@ def search_restaurants(
         top_k=requested_top_k,
     )
 
-    # Step 9: Merge Waves without reordering Wave 1
     final_ranked = []
     seen_ids = set()
     

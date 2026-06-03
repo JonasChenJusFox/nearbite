@@ -416,7 +416,6 @@ def rank_candidates(
         final_score = clamp(final_score + weighted_boost)
         
                 
-        # Dietary + Location Distance Guardrail
         has_location_intent = bool(
             filters.get("location")
             or filters.get("origin_lat") is not None

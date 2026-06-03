@@ -1,17 +1,8 @@
 # NearBite
 
-NearBite is a Streamlit application for NYC restaurant discovery with semantic retrieval, hard constraints, and personalized ranking.  
-This README is an implementation-accurate, deep technical guide to the current pipeline.
+NearBite is a Streamlit application for NYC restaurant discovery with fast search, optional semantic retrieval, hard constraints, and personalized ranking.
 
-## Team responsibilities
-
-| Name | Role |
-| --- | --- |
-| Yue Li | Data pipeline & preprocessing |
-| Fidaa Abdulkareem | Semantic retrieval & embeddings |
-| Albee Zhou | Ranking algorithm & personalization |
-| Jonas Chen | Frontend, authentication, MongoDB integration, recommendation algorithm |
-| Nick Sidoti | Integration, infra & documentation |
+Live app: https://nearbite-2glis.ondigitalocean.app/
 
 ## Table of contents
 
@@ -36,11 +27,11 @@ This README is an implementation-accurate, deep technical guide to the current p
 
 At a high level, search flow is:
 
-`user query + UI filters + user history -> parse -> vector build -> candidate retrieval -> hard filter -> rank -> display`
+`user query + UI filters + user history -> parse -> fast scoring or semantic retrieval -> filter -> rank -> display`
 
 Core design principles in the current implementation:
 
-- Keep semantic retrieval always active in Discover.
+- Use fast search by default for small hosted containers; semantic retrieval is available via `NEARBITE_SEARCH_MODE=semantic`.
 - Treat user-entered filter controls as strict when explicit.
 - Treat parsed intent hints as soft unless they are clearly explicit constraints.
 - Preserve query semantics during embedding (minimal cleaning only).
@@ -48,19 +39,33 @@ Core design principles in the current implementation:
 
 ## Project structure
 
-Primary modules involved in runtime search:
+Runtime entry points and app shell:
 
-- `app.py`: app bootstrap and page configuration.
-- `frontend/ui.py`: shell router, global dialogs, and page rendering.
-- `frontend/views/discover.py`: query UX, advanced filters, map/cards, backend call.
-- `integration/api.py`: orchestration layer for parse/retrieve/filter/rank.
-- `embeddings/query_parser.py`: deterministic text signal extraction.
-- `embeddings/vectorizer.py`: embedding model and vector utility functions.
-- `embeddings/cluster_retrieval.py`: cluster-level candidate retrieval from prebuilt assets.
-- `recommendation/ranker.py`: score calculation and weighted preference boosts.
-- `data/pipeline.py`: restaurant loading and interaction loading.
-- `integration/db.py`: Mongo initialization with local JSON fallback.
-- `integration/user_repo.py`: account/profile storage and embedding cache updates.
+- `app.py`: Streamlit bootstrap and page configuration.
+- `Dockerfile`, `Procfile`, `runtime.txt`: deployment entry points.
+- `frontend/ui.py`: page routing, global dialogs, and shared shell.
+- `frontend/assets/custom.css`: custom Streamlit styling.
+
+Frontend pages and components:
+
+- `frontend/views/`: Home, Discover, Profile, and Account pages.
+- `frontend/components/`: cards, modals, map, navigation, search, filters, and onboarding widgets.
+- `frontend/auth.py`: login/signup/logout/session state.
+- `frontend/state.py`, `frontend/user_profile_state.py`, `frontend/adapters.py`: session defaults, questionnaire state, and display normalization.
+
+Backend integration and ranking:
+
+- `integration/api.py`: search orchestration, fast search mode, optional semantic path, filtering, and ranking handoff.
+- `integration/db.py`, `integration/user_repo.py`, `integration/interaction_repo.py`: MongoDB access with local JSON fallback.
+- `integration/user_profile_model.py`, `integration/wrapped_repo.py`: questionnaire modeling and user recap data.
+- `recommendation/ranker.py`, `recommendation/utils.py`: score calculation and ranking helpers.
+
+Data, embeddings, and evaluation:
+
+- `data/restaurants.json`: restaurant dataset.
+- `data/restaurant_embeddings.json`, `data/cluster_centroids.json`: optional semantic retrieval assets.
+- `embeddings/`: query parsing, vector utilities, and offline index tooling.
+- `testing/`: evaluation fixtures and reports.
 
 ## Environment and startup
 
@@ -136,19 +141,18 @@ If you use DigitalOcean's Python buildpack instead of Docker, the included `Proc
 
 Search entrypoint: `integration/api.py::search_restaurants`.
 
-Sequence for Discover (`user_vector_only=False`):
+Default fast-search sequence for Discover:
 
 1. Adapt frontend filter payload to canonical backend fields.
 2. Parse query text into deterministic intent signals.
 3. Build explicit/query hard filter stages and soft preference stage.
-4. Build user vector (profile + interactions) when available.
-5. Embed the query and fuse query/user vectors.
-6. Retrieve candidate restaurants (cluster-first, then global fallback).
-7. Add distance/travel metadata from active origin.
-8. Apply hard filters.
-9. Apply soft fallback when hard filters are too restrictive.
-10. Rank candidates using semantic + structured + soft boosts.
-11. Return top-k sorted results with scoring metadata.
+4. Add distance/travel metadata from active origin.
+5. Apply explicit hard filters, with fallback to the full dataset if needed.
+6. Score restaurants with query tokens, price intent, rating, and distance.
+7. Rank candidates with structured and soft preference boosts.
+8. Return top-k sorted results with scoring metadata.
+
+Semantic search is still available with `NEARBITE_SEARCH_MODE=semantic`. That path builds profile/interaction vectors, embeds the query, retrieves candidates from cluster assets, then applies the same filtering and ranking layers.
 
 ## Query parsing and intent extraction
 
@@ -229,9 +233,9 @@ Final user vector is L2-normalized. Missing components degrade gracefully.
 
 ## Retrieval model
 
-Primary retrieval method: cluster-first.
+Default hosted retrieval is fast local scoring. Optional semantic retrieval uses a cluster-first vector path.
 
-### Cluster-first path
+### Semantic cluster-first path
 
 Uses:
 
@@ -399,8 +403,9 @@ Advanced filter controls are optional; query-first flow remains primary.
 
 ### Performance characteristics
 
-- First request can be slower due to model load/download.
-- Cluster assets substantially reduce retrieval search scope.
+- Fast search avoids runtime model loading and is recommended for the live DigitalOcean deployment.
+- Semantic mode can be slower on first request due to model load/download.
+- Cluster assets reduce retrieval search scope when semantic mode is enabled.
 - Candidate oversampling (typically `top_k * 5` to `top_k * 15`) improves final ranking quality under strict filters.
 
 ### Failure behavior (graceful degradation)

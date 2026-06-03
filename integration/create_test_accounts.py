@@ -149,7 +149,6 @@ PERSONAS = [
 
 def build_questionnaire_payload(persona: dict) -> dict:
     """Construct a full onboarding payload from the minimal persona definition."""
-    # Defaults
     payload = {
         "top_cuisines": persona["cuisines"],
         "craving_preferences": persona["cravings"],
@@ -169,7 +168,6 @@ def build_questionnaire_payload(persona: dict) -> dict:
         "aspirational_restaurants": [],
     }
     
-    # Adjustments based on persona name
     name_lower = persona["name"].lower()
     if "group" in name_lower:
         payload["dining_company"] = "Large group (6+)"
@@ -198,7 +196,6 @@ def main():
         email = f"{username}@nearbite.test"
         display_name = persona["name"]
         
-        # 1. Create or Reset User Account
         existing_user = find_user_by_username(username)
         if existing_user:
             reset_user_password(username, PASSWORD)
@@ -212,10 +209,6 @@ def main():
             )
             print(f"[{idx:02d}/25] Created new user: {username}")
             
-        # 2. Build and Save Profile
-        # This will securely write to Mongo or the Local DB fallback,
-        # update normalized features, generate the `profile_text`,
-        # and handle `upsert=True` properly so we don't get duplicates.
         payload = build_questionnaire_payload(persona)
         save_user_profile(username, payload)
         

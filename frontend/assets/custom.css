@@ -1,12 +1,6 @@
 /*
 frontend/assets/custom.css
-Owner: Jonas Chen
-
-Responsibilities:
-- Defines the custom visual style for the NearBite Streamlit app
-- Controls layout, typography, spacing, buttons, cards, dialogs, and navigation appearance
-- Applies NearBite branding, color palette, and responsive adjustments
-- Overrides default Streamlit styling to create a more polished product UI
+Custom Streamlit styling for layout, typography, cards, dialogs, navigation, and responsive behavior.
 */
 
 :root {
