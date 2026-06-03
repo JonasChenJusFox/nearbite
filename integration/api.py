@@ -7,8 +7,10 @@ Pipeline: parse query → build user vector → retrieve candidates → hard/sof
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 
+from config.settings import SEARCH_MODE
 from data.pipeline import load_restaurants, load_user_interactions
 from embeddings.cluster_retrieval import load_centroids, load_restaurant_index, retrieve_candidates
 from embeddings.query_parser import parse_query, minimal_clean_query
@@ -42,6 +44,46 @@ SOFT_FILTER_MIN_RESULTS = 10
 HARD_FILTER_FALLBACK_MIN_RESULTS = 5
 DEFAULT_NEARBY_DISTANCE_KM = 5.0
 WALKING_SPEED_KMPH = 5.0
+FAST_SEARCH_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "around",
+    "at",
+    "best",
+    "by",
+    "find",
+    "food",
+    "for",
+    "from",
+    "good",
+    "in",
+    "me",
+    "near",
+    "nearby",
+    "of",
+    "open",
+    "place",
+    "places",
+    "restaurant",
+    "restaurants",
+    "the",
+    "to",
+    "with",
+}
+FAST_SEARCH_PRICE_TERMS = {
+    "cheap": "$",
+    "budget": "$",
+    "affordable": "$",
+    "inexpensive": "$",
+    "moderate": "$$",
+    "midrange": "$$",
+    "expensive": "$$$",
+    "fancy": "$$$",
+    "upscale": "$$$",
+    "luxury": "$$$$",
+}
 INTERACTION_WEIGHTS = {
     "save": 1.0,
     "like": 1.5,
@@ -49,6 +91,131 @@ INTERACTION_WEIGHTS = {
     ("review", "neutral"): 0.5,
     ("review", "hate"): 0.0,
 }
+
+
+def _semantic_search_enabled() -> bool:
+    return SEARCH_MODE in {"semantic", "vector", "full"}
+
+
+def _tokenize_fast_query(query: str) -> list[str]:
+    tokens = re.findall(r"[a-z0-9$]+", query.lower())
+    return [
+        token
+        for token in tokens
+        if len(token) > 1 and token not in FAST_SEARCH_STOPWORDS
+    ]
+
+
+def _fast_search_text(restaurant: dict) -> str:
+    parts: list[str] = []
+    for key in (
+        "name",
+        "categories_text",
+        "neighborhood",
+        "borough",
+        "price",
+        "price_display",
+        "review_snippet",
+        "embedding_text",
+    ):
+        value = restaurant.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip().lower())
+
+    categories = restaurant.get("categories", [])
+    if isinstance(categories, list):
+        for category in categories:
+            if isinstance(category, dict):
+                parts.extend(
+                    str(category.get(key, "")).strip().lower()
+                    for key in ("title", "name", "alias")
+                    if str(category.get(key, "")).strip()
+                )
+            elif str(category).strip():
+                parts.append(str(category).strip().lower())
+
+    return " ".join(parts)
+
+
+def _fast_token_score(restaurant: dict, tokens: list[str]) -> float:
+    if not tokens:
+        return 0.0
+
+    name = str(restaurant.get("name") or "").lower()
+    categories = " ".join(_extract_category_strings(restaurant))
+    text = _fast_search_text(restaurant)
+
+    score = 0.0
+    for token in tokens:
+        if token in name:
+            score += 1.5
+        if token in categories:
+            score += 1.2
+        if token in text:
+            score += 0.6
+
+    return min(1.0, score / max(2.5, len(tokens) * 1.5))
+
+
+def _fast_price_preference(query_tokens: list[str], soft_preferences: dict) -> str | None:
+    explicit_price = soft_preferences.get("price")
+    if isinstance(explicit_price, str) and explicit_price:
+        return explicit_price
+    for token in query_tokens:
+        if token in FAST_SEARCH_PRICE_TERMS:
+            return FAST_SEARCH_PRICE_TERMS[token]
+    return None
+
+
+def _search_restaurants_fast(
+    query_text: str,
+    adapted_filters: dict,
+    parsed_query: dict[str, object] | None,
+    requested_top_k: int,
+) -> list[dict]:
+    """Low-latency production search that avoids loading the embedding model on small containers."""
+    explicit_hard_filters, _query_hard_filters, soft_preferences = _build_filter_stages(
+        adapted_filters,
+        parsed_query,
+    )
+    origin_lat = _safe_float(adapted_filters.get("origin_lat"), NYU_LAT)
+    origin_lon = _safe_float(adapted_filters.get("origin_lon"), NYU_LON)
+
+    restaurants = _with_distance_km(_get_restaurants(), origin_lat, origin_lon)
+    pool = apply_strict_filters(restaurants, explicit_hard_filters)
+    if not pool:
+        pool = restaurants
+
+    tokens = _tokenize_fast_query(minimal_clean_query(query_text) or query_text)
+    price_preference = _fast_price_preference(tokens, soft_preferences)
+    if price_preference:
+        soft_preferences["price"] = price_preference
+
+    candidates: list[tuple[dict, float]] = []
+    for restaurant in pool:
+        token_score = _fast_token_score(restaurant, tokens)
+        if not tokens:
+            token_score = 0.0
+
+        rating_score = _safe_float(restaurant.get("rating"), 0.0) / 5.0
+        distance_score = max(0.0, 1.0 - min(_safe_float(restaurant.get("distance_km"), 10.0), 10.0) / 10.0)
+        price_score = 0.0
+        if price_preference:
+            price_score = 1.0 if _normalize_price_level(restaurant.get("price")) == _normalize_price_level(price_preference) else 0.0
+
+        similarity = (
+            (0.58 * token_score)
+            + (0.18 * rating_score)
+            + (0.16 * distance_score)
+            + (0.08 * price_score)
+        )
+        candidates.append((restaurant, similarity))
+
+    return rank_candidates(
+        candidates=candidates,
+        active_filters=soft_preferences,
+        top_k=requested_top_k,
+    )
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -742,6 +909,14 @@ def search_restaurants(
         parsed_query = parse_query(query_text)
         embedding_query_text = minimal_clean_query(query_text)
         adapted_filters = _merge_query_signals(adapted_filters, parsed_query)
+
+    if not _semantic_search_enabled():
+        return _search_restaurants_fast(
+            query_text=query_text,
+            adapted_filters=adapted_filters,
+            parsed_query=parsed_query,
+            requested_top_k=requested_top_k,
+        )
 
     # Step 2: Build Filter Stages (Hard constraints vs Soft boosts)
     explicit_hard_filters, query_hard_filters, soft_preferences = _build_filter_stages(

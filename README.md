@@ -81,6 +81,7 @@ MONGO_DBNAME=NearBite
 MONGO_TIMEOUT_MS=2000
 NEARBITE_LOCAL_DB_PATH=data/local_db.json
 EMBEDDING_MODEL=sentence-transformers/multi-qa-mpnet-base-cos-v1
+NEARBITE_SEARCH_MODE=fast
 ```
 
 Behavior:
@@ -88,7 +89,8 @@ Behavior:
 - If Mongo is reachable, collections are backed by MongoDB.
 - If Mongo is unavailable or not configured, app falls back to `data/local_db.json` or `NEARBITE_LOCAL_DB_PATH`.
 - Use MongoDB for persistent production user accounts, saved restaurants, likes, reviews, and profiles. Local JSON storage is useful for demos but is ephemeral on most hosted containers.
-- `EMBEDDING_MODEL` should match the prebuilt embeddings in `data/restaurant_embeddings.json`.
+- `NEARBITE_SEARCH_MODE=fast` avoids loading the SentenceTransformer model at runtime, which is recommended for small DigitalOcean containers.
+- Set `NEARBITE_SEARCH_MODE=semantic` only when the container has enough RAM/CPU for full vector search. In that mode, `EMBEDDING_MODEL` must match the prebuilt embeddings in `data/restaurant_embeddings.json`.
 
 ### Run
 
@@ -117,7 +119,7 @@ pulling CUDA/NVIDIA packages into the image and keeps DigitalOcean builds much s
 MONGO_URI=<your MongoDB Atlas or DigitalOcean Mongo connection string>
 MONGO_DBNAME=NearBite
 MONGO_TIMEOUT_MS=2000
-EMBEDDING_MODEL=sentence-transformers/multi-qa-mpnet-base-cos-v1
+NEARBITE_SEARCH_MODE=fast
 ```
 
 5. Set the HTTP health check path to:

@@ -21,6 +21,7 @@ EMBEDDING_MODEL = os.getenv(
     "EMBEDDING_MODEL",
     "sentence-transformers/multi-qa-mpnet-base-cos-v1",
 )
+SEARCH_MODE = os.getenv("NEARBITE_SEARCH_MODE", "fast").strip().lower()
 
 # --- App defaults ---
 DEFAULT_CITY = "New York City"
