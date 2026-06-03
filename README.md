@@ -25,6 +25,19 @@ Live app: https://nearbite-2glis.ondigitalocean.app/
 - `testing/`: evaluation fixtures and reports
 - `Dockerfile`: DigitalOcean deployment image
 
+## Data Sources
+
+| Source | Used For |
+| --- | --- |
+| [Yelp Fusion API](https://fusion.yelp.com/) | Restaurant metadata such as name, rating, price, categories, hours, and images |
+| [Google Places API](https://developers.google.com/maps/documentation/places/web-service/overview) | Review text used for summaries, embeddings, and vibe matching |
+| [NYC Open Data - DOHMH Restaurant Inspections](https://data.cityofnewyork.us/Health/DOHMH-New-York-City-Restaurant-Inspection-Results/43nn-pn8j/about_data) | Supplemental official restaurant registry data |
+| [TripAdvisor NYC Dataset (Kaggle, 10k+)](https://www.kaggle.com/datasets/rayhan32/trip-advisor-newyork-city-restaurants-dataset-10k) | Review text for vibe tag extraction and NLP training |
+| [Yelp Open Dataset (Kaggle)](https://www.kaggle.com/datasets/yelp-dataset/yelp-dataset) | Sentiment analysis and embedding model training on an NYC subset |
+| Synthetic user data | Local personalization and interaction-history development |
+
+The Kaggle Yelp NYC dataset is outdated and is not used as the live recommendation source.
+
 ## Local Setup
 
 ```bash
