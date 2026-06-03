@@ -753,10 +753,9 @@ div[data-testid="stVerticalBlock"]:has(.nb-onboarding-anchor) [data-testid="stMu
   overflow: hidden !important;
 }
 
-div[data-testid="stVerticalBlock"]:has(.nb-onboarding-anchor) [data-testid="stSelectbox"] [data-baseweb="select"] *,
 div[data-testid="stVerticalBlock"]:has(.nb-onboarding-anchor) [data-testid="stSelectbox"] [data-baseweb="select"] > div {
-  background: transparent !important;
-  border: 0 !important;
+  background: #fff !important;
+  border: 1px solid var(--nb-border) !important;
   box-shadow: none !important;
   border-radius: 8px !important;
 }
@@ -857,6 +856,9 @@ div[data-testid="stVerticalBlock"]:has(.nb-location-bar-anchor) [data-testid="st
 iframe[title="st_folium"] {
   border: 1px solid var(--nb-border);
   background: #fffdfa !important;
+  display: block;
+  min-height: 420px;
+  width: 100% !important;
 }
 
 /* =========================================================

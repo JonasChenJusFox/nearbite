@@ -16,6 +16,21 @@ INITIAL_RESULT_COUNT = 12
 RESULTS_INCREMENT = 12
 
 
+@st.cache_data(show_spinner=False, ttl=5 * 60, max_entries=64)
+def _run_anonymous_search_cached(
+    query: str,
+    backend_filters: dict,
+    top_k: int,
+) -> list[dict]:
+    return search_restaurants(
+        query=query,
+        filters=backend_filters,
+        user_id="anonymous",
+        top_k=top_k,
+        user_vector_only=False,
+    )
+
+
 def _initialize_discover_state() -> None:
     if "discover_query" not in st.session_state:
         st.session_state.discover_query = st.session_state.get("search_query", "")
@@ -93,6 +108,12 @@ def _run_search(user_id: str) -> list[dict]:
         backend_filters["discover_radius_minutes"] = int(st.session_state.get("discover_radius_minutes", 30))
 
     with st.spinner("Updating results..."):
+        if user_id == "anonymous":
+            return _run_anonymous_search_cached(
+                query=st.session_state.get("discover_query", ""),
+                backend_filters=backend_filters,
+                top_k=200,
+            )
         return search_restaurants(
             query=st.session_state.get("discover_query", ""),
             filters=backend_filters,

@@ -145,8 +145,8 @@ def render_map(restaurants: list[dict]) -> None:
     folium_key = int(st.session_state.get("discover_folium_map_layout_key", 0))
     payload = st_folium(
         m,
-        width=None,
         height=420,
+        use_container_width=True,
         returned_objects=["last_object_clicked_popup", "last_object_clicked"],
         key=f"discover_folium_{folium_key}",
     )

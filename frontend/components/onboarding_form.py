@@ -171,6 +171,7 @@ def _render_multi_choice(
     default: list[str],
     *,
     key: str,
+    max_selections: int | None = None,
 ) -> list[str]:
     """
     Render a reliable multi-choice control.
@@ -183,6 +184,7 @@ def _render_multi_choice(
         options,
         default=default,
         key=key,
+        max_selections=max_selections,
     )
 
 
@@ -206,7 +208,7 @@ def render_onboarding_form() -> None:
     meal_options = _merge_options_with_existing(MEALS, saved_meals)
     decision_options = _merge_options_with_existing(DECISION_STYLE, saved_decision_style)
 
-    default_top_cuisines = _safe_multiselect_defaults(cuisine_options, saved_top_cuisines)
+    default_top_cuisines = _safe_multiselect_defaults(cuisine_options, saved_top_cuisines)[:3]
     default_cravings = _safe_multiselect_defaults(craving_options, saved_cravings)
     default_vibes = _safe_multiselect_defaults(vibe_options, saved_vibes)
     default_dietary = _safe_multiselect_defaults(dietary_options, saved_dietary)
@@ -234,9 +236,10 @@ def render_onboarding_form() -> None:
             options=cuisine_options,
             default=default_top_cuisines,
             key="onboarding_top_cuisines",
+            max_selections=3,
         )
-        if len(top_cuisines) > 3:
-            st.warning("Please choose up to 3 cuisines.")
+        if len(top_cuisines) == 3:
+            st.caption("Top 3 selected.")
 
         cravings = _render_multi_choice(
             "What kind of food are you most often craving?",
