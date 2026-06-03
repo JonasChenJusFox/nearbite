@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import html
+import re
 
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -22,6 +25,8 @@ from integration.interaction_repo import (
 )
 
 REVIEW_OPTIONS = ["love", "neutral", "hate"]
+IMAGE_FETCH_TIMEOUT_SECONDS = 2.5
+MAX_IMAGE_BYTES = 2_500_000
 
 # Display-only: backend / ranker may still use semantic labels on ``price`` fields.
 _SEMANTIC_PRICE_TO_DOLLARS: dict[str, str] = {
@@ -70,6 +75,7 @@ _CARD_IFRAME_STYLES = """
     display: block;
     background: linear-gradient(180deg, #ebe2d8 0%, #ddd2c8 100%);
   }
+  .nb-card-image { color: transparent; }
   .nb-card-image-placeholder {
     display: flex;
     align-items: center;
@@ -116,6 +122,47 @@ _CARD_IFRAME_STYLES = """
   }
 </style>
 """
+
+
+def _optimized_image_url(image_url: str) -> str:
+    """Prefer a smaller Yelp image variant for faster first paint in hosted environments."""
+    return re.sub(r"/o\.(jpg|jpeg|png|webp)$", r"/348s.\1", image_url.strip(), flags=re.IGNORECASE)
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 24, max_entries=512)
+def _image_data_uri(image_url: str) -> str:
+    """Fetch and cache a remote image as a data URI so cards do not depend on browser-side CDN fetches."""
+    if not image_url:
+        return ""
+
+    url = _optimized_image_url(image_url)
+    try:
+        response = requests.get(
+            url,
+            timeout=IMAGE_FETCH_TIMEOUT_SECONDS,
+            headers={"User-Agent": "NearBite/1.0"},
+        )
+        response.raise_for_status()
+    except Exception:
+        return ""
+
+    content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+        return ""
+
+    content = response.content
+    if not content or len(content) > MAX_IMAGE_BYTES:
+        return ""
+
+    encoded = base64.b64encode(content).decode("ascii")
+    return f"data:{content_type};base64,{encoded}"
+
+
+def _image_placeholder_html() -> str:
+    return (
+        "<div class='nb-card-image nb-card-image-placeholder'>"
+        "<div class='nb-card-image-fallback'>Image unavailable</div></div>"
+    )
 
 
 def _get_price_for_card(restaurant: dict) -> str:
@@ -303,16 +350,15 @@ def render_restaurant_card(restaurant: dict, key_prefix: str = "card") -> None:
     meta = _build_meta_line(restaurant)
 
     image_url = clean_text(restaurant.get("image_url", ""))
-    if image_url:
+    image_src = _image_data_uri(image_url) if image_url else ""
+    if image_src:
         image_html = (
-            f"<img src='{html.escape(image_url, quote=True)}' "
-            f"alt='{html.escape(name, quote=True)}' class='nb-card-image'/>"
+            f"<img src='{html.escape(image_src, quote=True)}' "
+            f"alt='{html.escape(name, quote=True)}' "
+            "class='nb-card-image' loading='lazy' decoding='async'/>"
         )
     else:
-        image_html = (
-            "<div class='nb-card-image nb-card-image-placeholder'>"
-            "<div class='nb-card-image-fallback'>Image unavailable</div></div>"
-        )
+        image_html = _image_placeholder_html()
 
     # components.html bypasses Markdown; st.markdown can still surface HTML as plain text
     # for some payloads (e.g. review text with Markdown-like characters).
