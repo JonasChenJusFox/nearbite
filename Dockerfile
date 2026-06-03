@@ -14,7 +14,9 @@ RUN apt-get update \
 
 COPY requirements.txt .
 RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements.txt
+    && python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu "torch==2.11.0+cpu" \
+    && grep -vE '^(torch|torchvision|pytest|pypdf|psycopg2-binary|pgvector)==' requirements.txt > /tmp/requirements-runtime.txt \
+    && python -m pip install -r /tmp/requirements-runtime.txt
 
 COPY . .
 

@@ -108,6 +108,9 @@ Recommended deployment path: use the included `Dockerfile`.
 streamlit run app.py --server.address=0.0.0.0 --server.port=${PORT:-8501} --server.headless=true
 ```
 
+The Dockerfile installs the CPU-only PyTorch wheel before runtime requirements. This avoids
+pulling CUDA/NVIDIA packages into the image and keeps DigitalOcean builds much smaller.
+
 4. Add production environment variables:
 
 ```bash
