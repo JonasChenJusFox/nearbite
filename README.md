@@ -2,7 +2,9 @@
 
 NearBite is a Streamlit app for NYC restaurant discovery, saved places, user profiles, and personalized recommendations.
 
-Live app: https://nearbite-2glis.ondigitalocean.app/
+
+- Original Repository: [NearBite](https://github.com/JonasChenJusFox/ML_FinalProject)
+- Live app: https://nearbite-2glis.ondigitalocean.app/
 
 ## Features
 
