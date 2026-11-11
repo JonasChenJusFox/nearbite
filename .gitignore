@@ -1,6 +1,8 @@
 # Environment files
 .env
 .envbackup
+.dev.vars*
+.streamlit/secrets.toml
 .venv/
 venv/
 
@@ -17,6 +19,8 @@ __pycache__/
 
 # Node (just in case frontend uses it)
 node_modules/
+.wrangler/
+dist/
 
 # Local backups / temp
 backup_local_changes/

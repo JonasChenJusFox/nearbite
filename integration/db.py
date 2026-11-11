@@ -20,6 +20,7 @@ load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI", "").strip()
 MONGO_DBNAME = os.getenv("MONGO_DBNAME", "NearBite")
 MONGO_TIMEOUT_MS = int(os.getenv("MONGO_TIMEOUT_MS", "2000"))
+REQUIRE_MONGO = os.getenv("NEARBITE_REQUIRE_MONGO", "false").strip().lower() in {"1", "true", "yes"}
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCAL_DB_PATH = Path(os.getenv("NEARBITE_LOCAL_DB_PATH", REPO_ROOT / "data" / "local_db.json"))
 
@@ -160,6 +161,8 @@ class _LocalCollection:
 
 def _init_mongo():
     if MongoClient is None or not MONGO_URI:
+        if REQUIRE_MONGO:
+            raise RuntimeError("MongoDB is required: install pymongo and configure MONGO_URI.")
         return None, None
     try:
         mongo_client = MongoClient(
@@ -170,6 +173,10 @@ def _init_mongo():
         mongo_client.admin.command("ping")
         return mongo_client, mongo_client[MONGO_DBNAME]
     except Exception:
+        if REQUIRE_MONGO:
+            # Do not silently write production accounts to an ephemeral disk.
+            # Suppress connection details, which may include credentials.
+            raise RuntimeError("MongoDB is required but unavailable. Check its connection and network access.") from None
         return None, None
 
 client, db = _init_mongo()

@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nearbite",
+  "main": "cloudflare/worker.ts",
+  "compatibility_date": "2026-11-10",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "containers": [
+    {
+      "class_name": "NearBiteContainer",
+      "image": "./Dockerfile",
+      "instance_type": "standard-1",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "NEARBITE", "class_name": "NearBiteContainer" }
+    ]
+  },
+  "exports": {
+    "NearBiteContainer": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "vars": {
+    "MONGO_DBNAME": "NearBite",
+    "MONGO_TIMEOUT_MS": "5000",
+    "NEARBITE_SEARCH_MODE": "fast"
+  }
+}
